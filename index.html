@@ -2663,8 +2663,7 @@ const SYN = [
  [/yogurt/,'yogurt yoghurt lacteos'],
  [/mantequilla/,'mantequilla margarina lacteos'],
  [/huevo/,'huevos'],
- [/pan /,'pan marraqueta hallulla molde'],
- [/pan industrial|panaderia/,'pan molde bimbo panaderia'],
+ [/pan industrial|panaderia/,'pan marraqueta hallulla bimbo'],
  [/tortas|masas/,'tortas kuchen masas pasteleria'],
  [/helado/,'helados congelados paletas'],
  [/congelad/,'congelados hamburguesas nuggets apanados'],
@@ -2975,13 +2974,17 @@ function scoreEntry(e,toks){
   // cuando la búsqueda tiene 2+ palabras, premiar fuerte si existe UN producto real que las contiene
   // TODAS juntas (ej. "salsa de tomate" en un mismo producto), en vez de que cada palabra calce
   // por separado en productos distintos de la misma categoría (lo que antes mezclaba resultados).
-  if(toks.length>1 && e.hProducts){
-    // en el mismo orden en que se escribieron (evita que "pan de molde" combine con "MOLDE PAN 27CM")
-    const words=hay=>hay.split(' ');
-    const ordered=p=>{ const w=words(p); let from=0; for(const t of toks){ const i=w.findIndex((x,idx)=>idx>=from&&tokMatch(x,t)); if(i<0) return false; from=i+1; } return true; };
-    if(e.hProducts.some(ordered)) s+=20;
-  }
+  if(phraseHit(e,toks)) s+=20;
   return s;
+}
+// ¿hay un producto real (o el propio nombre de la zona) con TODAS las palabras juntas y en orden?
+// (evita que "pan de molde" combine con "MOLDE PAN 27CM", o que "salsa de tomate" cuente si "salsa"
+// y "tomate" aparecen sueltos en productos distintos de la misma categoría)
+function phraseHit(e,toks){
+  if(toks.length<2) return true;
+  const ordered=hay=>{ const w=hay.split(' '); let from=0; for(const t of toks){ const i=w.findIndex((x,idx)=>idx>=from&&tokMatch(x,t)); if(i<0) return false; from=i+1; } return true; };
+  if(ordered(e.hName)) return true;
+  return !!(e.hProducts && e.hProducts.some(ordered));
 }
 
 /* ---------- ubicación en lenguaje simple ----------
@@ -3085,6 +3088,9 @@ function compute(){
     const vis=r=>r.filter(x=>(!state.lineas.size||state.lineas.has(x.e.linea)) && (state.tech||x.e.fromMap||(!INTERNAL_RE.test(x.e.name)&&(x.e.rects.length||zonesFor(x.e).length))));
     FUZZY=false; res=rank();
     if(!vis(res).length){ FUZZY=true; res=rank(); FUZZY=false; }   // tipeos: solo si no hay ningún resultado exacto
+    // con 2+ palabras: si ALGÚN resultado trae la frase completa en un producto real (o en su nombre),
+    // se ocultan los que solo comparten palabras sueltas en productos sin relación entre sí (menos ruido).
+    if(toks.length>1){ const strong=res.filter(x=>phraseHit(x.e,toks)); if(strong.length) res=strong; }
   }
   else { res=ENTRIES.map(e=>({e,s:0})).filter(x=>!x.e.isProduct); const order=Object.keys(LINEAS); res.sort((a,b)=>order.indexOf(a.e.linea)-order.indexOf(b.e.linea)||a.e.name.localeCompare(b.e.name,'es')); }
   if(state.lineas.size) res=res.filter(x=>state.lineas.has(x.e.linea));
